@@ -1,12 +1,13 @@
 #include <Arduino.h>
 #include <SoftModem.h>
+#include "NewTone.h"
 
 #define HOOK_PIN 2
-#define CALLER_HOOK_PIN 7
+#define CALLER_HOOK_PIN 10
 #define DEST_HOOK_PIN 8
 #define CONNECT_RELAY 4
 #define RINGER_RELAY 5
-#define TONE_OUTPUT 6
+#define TONE_OUTPUT 9
 
 #define TONE_FREQUENCY (440)
 
@@ -121,22 +122,22 @@ void loop()
       (last_state == CALLING && state != CALLING) ||
       (last_state == WAIT_FOR_DIAL && state != WAIT_FOR_DIAL))
   {
-    // noTone(TONE_OUTPUT);
+    noNewTone(TONE_OUTPUT);
     digitalWrite(RINGER_RELAY, LOW);
     last_tone_change = 0;
   }
 
   if (state == WAIT_FOR_DIAL && last_state != WAIT_FOR_DIAL)
   {
-    tone(TONE_OUTPUT, TONE_FREQUENCY, 5000);
+    NewTone(TONE_OUTPUT, TONE_FREQUENCY, 5000);
   }
 
   if (state == BUSY)
   {
     if (millis() - last_tone_change > 500)
     {
-      // noTone(TONE_OUTPUT);
-      // tone(TONE_OUTPUT, TONE_FREQUENCY, 250);
+      noNewTone(TONE_OUTPUT);
+      NewTone(TONE_OUTPUT, TONE_FREQUENCY, 250);
       last_tone_change = millis();
     }
   }
@@ -145,8 +146,8 @@ void loop()
   {
     if (millis() - last_tone_change > 4000)
     {
-      // noTone(TONE_OUTPUT);
-      // tone(TONE_OUTPUT, TONE_FREQUENCY, 1500);
+      noNewTone(TONE_OUTPUT);
+      NewTone(TONE_OUTPUT, TONE_FREQUENCY, 1500);
       last_tone_change = millis();
     }
     if (millis() - last_ringer_change > 2000)
@@ -219,38 +220,38 @@ String state_to_string(State s)
 #define TX_BUF_LEN (64)
 void transmit_caller_id()
 {
-  // transmit 0x55 30 times:
+  detachInterrupt(digitalPinToInterrupt(HOOK_PIN));
+  delay(100);
+
   for (int i = 0; i < 30; i++)
   {
     modem.write(0x55);
   }
+
   // transmit 1200hz for 140ms
   char txbuf[TX_BUF_LEN];
   memset(txbuf, 0, TX_BUF_LEN);
-  // char message[] = "000000005551212";
-
-  // 04 12 30 39 33 30 31 32 32 34 36 30 39 35 35 35 31 32 31 32 51
 
   char message[] = {0x30, 0x39, 0x33, 0x30, 0x31, 0x32, 0x32, 0x34, 0x36, 0x30, 0x39, 0x35, 0x35, 0x35, 0x31, 0x32, 0x31, 0x32, 0x00};
-  auto msglen = strlen(message);
+  char msglen = strlen(message);
+
   txbuf[0] = 0x04; // message type
-  txbuf[1] = strlen(message);
-  Serial.print("Message length: (should be 0x12) ");
-  Serial.println(strlen(message), HEX);
-  // copy message into txbuf starting at byte 2
+  txbuf[1] = msglen;
+
   memcpy(txbuf + 2, message, msglen);
-  auto checksum_position = msglen + 2;
+  int checksum_position = msglen + 2;
 
   // The Checksum Word contains the twos complement of the modulo 256 sum of the message:
-
-  auto checksum = 0;
+  unsigned char checksum = 0;
   for (unsigned int i = 0; i < checksum_position; i++)
   {
     checksum += txbuf[i];
   }
-  txbuf[checksum_position] = checksum & 0xff;
-  Serial.print("Checksum: should be 0x51:");
-  Serial.println(checksum, HEX);
+  checksum = ~checksum + 1;
+
+  txbuf[checksum_position] = checksum;
 
   modem.write((uint8_t *)txbuf, strlen(txbuf));
+  delay(100);
+  attachInterrupt(digitalPinToInterrupt(HOOK_PIN), caller_hook_isr, CHANGE);
 }
