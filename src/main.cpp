@@ -46,12 +46,12 @@ void loop()
   static unsigned long last_tone_change = 0;
   static unsigned long last_ringer_change = 0;
 
-  if (millis() - caller_hook_last_transition > 100)
+  if (millis() - caller_hook_last_transition > 300)
   {
     caller_off_hook = !digitalRead(CALLER_HOOK);
   }
 
-  if (millis() - dest_hook_last_transition > 100)
+  if (millis() - dest_hook_last_transition > 300)
   {
     dest_off_hook = !digitalRead(DEST_HOOK);
   }
@@ -142,7 +142,7 @@ void loop()
     }
     if (millis() - last_ringer_change > 2000)
     {
-      digitalWrite(RINGER_RELAY, digitalRead(RINGER_RELAY));
+      digitalWrite(RINGER_RELAY, !digitalRead(RINGER_RELAY));
       last_ringer_change = millis();
     }
   }
