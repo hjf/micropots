@@ -48,15 +48,36 @@ void setup()
 volatile boolean caller_hook_read = false;
 volatile boolean dest_hook_read = false;
 
+#define NUMBER_LENGTH (32)
 void loop()
 {
-
-  char dtmf = get_dtmf();
-  if (dtmf != 0)
+  char prev_dtmf = 0;
+  int spaces = 0;
+  int ncount = 0;
+  char number[NUMBER_LENGTH];
+  memset(number, 0, NUMBER_LENGTH);
+  while (spaces < 100 && ncount < NUMBER_LENGTH - 1)
   {
-    Serial.print("DTMF: ");
-    Serial.println(dtmf);
+    char dtmf = get_dtmf();
+    if (dtmf != 0)
+    {
+      if (dtmf == '_')
+        spaces++;
+      else if (spaces > 1)
+      {
+        number[ncount++] = dtmf;
+        spaces = 0;
+      }
+    }
+
+    // else
+    // {
+    //   spaces++;
+    // }
+    // prev_dtmf = dtmf;
   }
+  if (number[0] != 0)
+    Serial.println(number);
   return;
 
   static State last_state = UNINITIALIZED;
@@ -266,9 +287,9 @@ void transmit_caller_id()
   attachInterrupt(digitalPinToInterrupt(HOOK_PIN), caller_hook_isr, CHANGE);
 }
 #define ADC_MIDPOINT (512)
-#define SAMPLE_RATE (8800)
+#define SAMPLE_RATE (8900)
 #define SAMPLE_SIZE (50)
-#define MAG_THRESHOLD (1000)
+#define MAG_THRESHOLD (1500)
 
 #include <Goertzel.h>
 Goertzel X0(1209.0, SAMPLE_RATE);
@@ -288,12 +309,37 @@ char dtmf_lut[] = {
 char get_dtmf()
 {
   int samples[SAMPLE_SIZE];
-  bool col_detected = false;
   char n = -1;
+  noInterrupts();
   for (int i = 0; i < SAMPLE_SIZE; i++)
   {
     samples[i] = analogRead(A0);
   }
+  interrupts();
+
+  // calculate standard deviation from samples:
+  float sum = 0;
+  for (int i = 0; i < SAMPLE_SIZE; i++)
+  {
+    if (samples[i] > 800)
+      samples[i] = ADC_MIDPOINT;
+
+    sum += samples[i];
+  }
+  float mean = sum / SAMPLE_SIZE;
+
+  float variance = 0;
+  for (int i = 0; i < SAMPLE_SIZE; i++)
+  {
+    variance += pow(samples[i] - mean, 2);
+  }
+  float standardDeviation = sqrt(variance / SAMPLE_SIZE);
+  // Serial.println(standardDeviation);
+  if (standardDeviation < 10)
+  {
+    return '_';
+  }
+
   if (X0.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
     n = 0;
   if (X1.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
