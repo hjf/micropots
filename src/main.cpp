@@ -12,6 +12,7 @@
 #define TONE_FREQUENCY (440)
 
 void caller_hook_isr();
+char get_dtmf();
 SoftModem modem = SoftModem();
 
 unsigned long caller_hook_last_transition = 0;
@@ -49,6 +50,15 @@ volatile boolean dest_hook_read = false;
 
 void loop()
 {
+
+  char dtmf = get_dtmf();
+  if (dtmf != 0)
+  {
+    Serial.print("DTMF: ");
+    Serial.println(dtmf);
+  }
+  return;
+
   static State last_state = UNINITIALIZED;
   static unsigned long last_state_change = 0;
   static unsigned long last_tone_change = 0;
@@ -254,4 +264,53 @@ void transmit_caller_id()
   modem.write((uint8_t *)txbuf, strlen(txbuf));
   delay(100);
   attachInterrupt(digitalPinToInterrupt(HOOK_PIN), caller_hook_isr, CHANGE);
+}
+#define ADC_MIDPOINT (512)
+#define SAMPLE_RATE (8800)
+#define SAMPLE_SIZE (50)
+#define MAG_THRESHOLD (1000)
+
+#include <Goertzel.h>
+Goertzel X0(1209.0, SAMPLE_RATE);
+Goertzel X1(1336.0, SAMPLE_RATE);
+Goertzel X2(1477.0, SAMPLE_RATE);
+Goertzel Y0(697.0, SAMPLE_RATE);
+Goertzel Y1(770.0, SAMPLE_RATE);
+Goertzel Y2(852.0, SAMPLE_RATE);
+Goertzel Y3(941.0, SAMPLE_RATE);
+
+char dtmf_lut[] = {
+    '1', '2', '3',
+    '4', '5', '6',
+    '7', '8', '9',
+    '*', '0', '#'};
+
+char get_dtmf()
+{
+  int samples[SAMPLE_SIZE];
+  bool col_detected = false;
+  char n = -1;
+  for (int i = 0; i < SAMPLE_SIZE; i++)
+  {
+    samples[i] = analogRead(A0);
+  }
+  if (X0.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
+    n = 0;
+  if (X1.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
+    n = 1;
+  if (X2.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
+    n = 2;
+  if (n == -1)
+    return 0;
+
+  if (Y0.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
+    return dtmf_lut[n];
+  if (Y1.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
+    return dtmf_lut[n + 3];
+  if (Y2.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
+    return dtmf_lut[n + 6];
+  if (Y3.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
+    return dtmf_lut[n + 9];
+
+  return 0;
 }
