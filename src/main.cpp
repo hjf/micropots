@@ -1,4 +1,9 @@
 #include <Arduino.h>
+#define SOFT_MODEM_BAUD_RATE (1200)
+#define SOFT_MODEM_LOW_FREQ (1200)
+#define SOFT_MODEM_HIGH_FREQ (2200)
+#define SOFT_MODEM_RX_BUF_SIZE (32)
+#define SOFT_MODEM_DEBUG_ENABLE (1)
 #include <SoftModem.h>
 #include "NewTone.h"
 
@@ -42,6 +47,7 @@ void setup()
   pinMode(DEST_HOOK_PIN, INPUT_PULLUP);
   pinMode(CONNECT_RELAY, OUTPUT);
   pinMode(RINGER_RELAY, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
   attachInterrupt(digitalPinToInterrupt(HOOK_PIN), caller_hook_isr, CHANGE);
 }
 
@@ -251,15 +257,7 @@ String state_to_string(State s)
 #define TX_BUF_LEN (64)
 void transmit_caller_id()
 {
-  detachInterrupt(digitalPinToInterrupt(HOOK_PIN));
-  delay(100);
 
-  for (int i = 0; i < 30; i++)
-  {
-    modem.write(0x55);
-  }
-
-  // transmit 1200hz for 140ms
   char txbuf[TX_BUF_LEN];
   memset(txbuf, 0, TX_BUF_LEN);
 
@@ -282,8 +280,16 @@ void transmit_caller_id()
 
   txbuf[checksum_position] = checksum;
 
+  detachInterrupt(digitalPinToInterrupt(HOOK_PIN));
+  delay(10);
+  for (int i = 0; i < 30; i++)
+  {
+    modem.write(0x55);
+  }
+
+  modem.sendTone();
   modem.write((uint8_t *)txbuf, strlen(txbuf));
-  delay(100);
+  delay(10);
   attachInterrupt(digitalPinToInterrupt(HOOK_PIN), caller_hook_isr, CHANGE);
 }
 #define ADC_MIDPOINT (512)
