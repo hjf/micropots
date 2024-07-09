@@ -16,8 +16,6 @@
 
 #define TONE_FREQUENCY (440)
 
-void caller_hook_isr();
-char get_dtmf();
 SoftModem modem = SoftModem();
 
 unsigned long caller_hook_last_transition = 0;
@@ -37,6 +35,10 @@ typedef enum
 State state = UNINITIALIZED;
 String state_to_string(State s);
 void transmit_caller_id();
+char dtmf_majority(char n);
+void caller_hook_isr();
+char get_dtmf();
+char findMajority(char arr[], char n);
 
 void setup()
 {
@@ -62,11 +64,12 @@ void loop()
   int ncount = 0;
   char number[NUMBER_LENGTH];
   memset(number, 0, NUMBER_LENGTH);
-  while (spaces < 100 && ncount < NUMBER_LENGTH - 1)
+  while (spaces < 20 && ncount < NUMBER_LENGTH - 1)
   {
-    char dtmf = get_dtmf();
+    char dtmf = dtmf_majority(3);
     if (dtmf != 0)
     {
+      // Serial.println(dtmf);
       if (dtmf == '_')
         spaces++;
       else if (spaces > 1)
@@ -74,6 +77,10 @@ void loop()
         number[ncount++] = dtmf;
         spaces = 0;
       }
+    }
+    else
+    {
+      // Serial.println("No DTMF");
     }
 
     // else
@@ -295,7 +302,7 @@ void transmit_caller_id()
 #define ADC_MIDPOINT (512)
 #define SAMPLE_RATE (8900)
 #define SAMPLE_SIZE (50)
-#define MAG_THRESHOLD (1500)
+#define MAG_THRESHOLD (3500)
 
 #include <Goertzel.h>
 Goertzel X0(1209.0, SAMPLE_RATE);
@@ -307,15 +314,30 @@ Goertzel Y2(852.0, SAMPLE_RATE);
 Goertzel Y3(941.0, SAMPLE_RATE);
 
 char dtmf_lut[] = {
-    '1', '2', '3',
-    '4', '5', '6',
-    '7', '8', '9',
-    '*', '0', '#'};
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+    '6',
+    '7',
+    '8',
+    '9',
+    '*',
+    '0',
+    '#',
+    'p',
+    'q',
+    'r',
+    's',
+};
 
 char get_dtmf()
 {
   int samples[SAMPLE_SIZE];
-  char n = -1;
+  float max_x = -1;
+  float max_y = -1;
+  int n = -1;
   noInterrupts();
   for (int i = 0; i < SAMPLE_SIZE; i++)
   {
@@ -327,9 +349,6 @@ char get_dtmf()
   float sum = 0;
   for (int i = 0; i < SAMPLE_SIZE; i++)
   {
-    if (samples[i] > 800)
-      samples[i] = ADC_MIDPOINT;
-
     sum += samples[i];
   }
   float mean = sum / SAMPLE_SIZE;
@@ -340,29 +359,100 @@ char get_dtmf()
     variance += pow(samples[i] - mean, 2);
   }
   float standardDeviation = sqrt(variance / SAMPLE_SIZE);
-  // Serial.println(standardDeviation);
+
   if (standardDeviation < 10)
   {
     return '_';
   }
 
-  if (X0.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
-    n = 0;
-  if (X1.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
+  n = 0;
+  float current_x = X0.Mag(samples, SAMPLE_SIZE);
+  max_x = current_x;
+
+  current_x = X1.Mag(samples, SAMPLE_SIZE);
+  if (current_x > max_x)
+  {
     n = 1;
-  if (X2.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
+    max_x = current_x;
+  }
+  current_x = X2.Mag(samples, SAMPLE_SIZE);
+  if (current_x > max_x)
+  {
     n = 2;
-  if (n == -1)
+    max_x = current_x;
+  }
+
+  if (max_x < MAG_THRESHOLD)
     return 0;
 
-  if (Y0.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
-    return dtmf_lut[n];
-  if (Y1.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
-    return dtmf_lut[n + 3];
-  if (Y2.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
-    return dtmf_lut[n + 6];
-  if (Y3.Mag(samples, SAMPLE_SIZE) > MAG_THRESHOLD)
-    return dtmf_lut[n + 9];
+  float current_y = Y0.Mag(samples, SAMPLE_SIZE);
+  max_y = current_y;
+  int ysum = 0;
+  current_y = Y1.Mag(samples, SAMPLE_SIZE);
 
-  return 0;
+  if (current_y > max_y)
+  {
+    ysum = 3;
+    max_y = current_y;
+  }
+
+  current_y = Y2.Mag(samples, SAMPLE_SIZE);
+  if (current_y > max_y)
+  {
+    ysum = 6;
+    max_y = current_y;
+  }
+
+  current_y = Y3.Mag(samples, SAMPLE_SIZE);
+  if (current_y > max_y)
+  {
+    ysum = 9;
+    max_y = current_y;
+  }
+
+  if (max_y < MAG_THRESHOLD)
+    return 0;
+
+  n += ysum;
+
+  return dtmf_lut[n & 0x0f];
+}
+
+char dtmf_majority(char n)
+{
+  // call get_dtmf 3 times and choose the majority result:
+  char dtmf[n];
+  for (int i = 0; i < n; i++)
+  {
+    dtmf[i] = get_dtmf();
+  }
+  return findMajority(dtmf, n);
+}
+
+char findMajority(char arr[], char n)
+{
+  int maxCount = 0;
+  int index = -1; // sentinels
+  for (int i = 0; i < n; i++)
+  {
+    int count = 0;
+    for (int j = 0; j < n; j++)
+    {
+      if (arr[i] == arr[j])
+        count++;
+    }
+
+    // update maxCount if count of
+    // current element is greater
+    if (count > maxCount)
+    {
+      maxCount = count;
+      index = i;
+    }
+  }
+
+  // if maxCount is greater than n/2
+  // return the corresponding element
+  if (maxCount > n / 2)
+    return arr[index];
 }
